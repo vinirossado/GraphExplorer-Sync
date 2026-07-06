@@ -37,7 +37,7 @@ struct SyncController: RouteCollection {
             .all()
         return rows.map { p in
             ProjectDTO(
-                id: p.id ?? "",
+                id: p.clientId,
                 name: p.name,
                 endpoint: p.endpoint,
                 createdAt: p.createdAtMs,
@@ -67,7 +67,7 @@ struct SyncController: RouteCollection {
             guard !dto.id.isEmpty else { continue }
             let existing = try await Project.query(on: req.db)
                 .filter(\.$user.$id == userID)
-                .filter(\.$id == dto.id)
+                .filter(\.$clientId == dto.id)
                 .first()
             if let existing {
                 guard dto.updatedAt >= existing.updatedAtMs else {
@@ -83,7 +83,7 @@ struct SyncController: RouteCollection {
                 try await existing.save(on: req.db)
             } else {
                 let project = Project()
-                project.id = dto.id
+                project.clientId = dto.id
                 project.$user.id = userID
                 project.name = dto.name
                 project.endpoint = dto.endpoint
@@ -113,7 +113,7 @@ struct SyncController: RouteCollection {
         let rows = try await query.all()
         return rows.map { q in
             SavedQueryDTO(
-                id: q.id ?? "",
+                id: q.clientId,
                 projectId: q.projectId,
                 name: q.name,
                 query: q.query,
@@ -142,7 +142,7 @@ struct SyncController: RouteCollection {
             guard !dto.id.isEmpty else { continue }
             let existing = try await SavedQueryRecord.query(on: req.db)
                 .filter(\.$user.$id == userID)
-                .filter(\.$id == dto.id)
+                .filter(\.$clientId == dto.id)
                 .first()
             if let existing {
                 guard dto.updatedAt >= existing.updatedAtMs else {
@@ -158,7 +158,7 @@ struct SyncController: RouteCollection {
                 try await existing.save(on: req.db)
             } else {
                 let record = SavedQueryRecord()
-                record.id = dto.id
+                record.clientId = dto.id
                 record.$user.id = userID
                 record.projectId = dto.projectId
                 record.name = dto.name

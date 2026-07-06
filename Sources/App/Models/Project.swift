@@ -1,15 +1,22 @@
 import Fluent
 import Vapor
 
-/// Mirror of a Graph Explorer project. Ids are CLIENT-generated strings (the
-/// desktop app owns identity — including the migrated id "default"), so the
-/// server never invents project ids. Timestamps are epoch milliseconds as
+/// Mirror of a Graph Explorer project.
+///
+/// The row key is a surrogate UUID; the CLIENT-generated identifier lives in
+/// ``clientId`` and is unique **per user**, not globally — every migrated
+/// client ships a project literally named `"default"`, so two accounts must be
+/// able to hold the same client id. Timestamps are epoch milliseconds as
 /// produced by `Date.now()` in the client; `updatedAtMs` drives last-write-wins.
 final class Project: Model, @unchecked Sendable {
     static let schema = "projects"
 
-    @ID(custom: .id, generatedBy: .user)
-    var id: String?
+    @ID(key: .id)
+    var id: UUID?
+
+    /// Client-generated identifier (e.g. `"default"`); unique per user.
+    @Field(key: "client_id")
+    var clientId: String
 
     @Parent(key: "user_id")
     var user: User

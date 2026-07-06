@@ -130,6 +130,41 @@ struct AppTests {
         }
     }
 
+    @Test("two users can both own a project with the same client id")
+    func sameClientIdAcrossUsers() async throws {
+        // Regression: every migrated client pushes a project literally named
+        // "default". A global primary key on the client id made the SECOND
+        // account's first sync explode with a 23505 duplicate-key 500.
+        try await withApp { app in
+            let tokenA = try await registerAndToken(app, email: "a@example.com")
+            let tokenB = try await registerAndToken(app, email: "b@example.com")
+
+            for (token, name) in [(tokenA, "A's MTG"), (tokenB, "B's Wikidata")] {
+                let dto = ProjectDTO(
+                    id: "default", name: name, endpoint: "http://x/sparql",
+                    createdAt: 1_000, lastOpenedAt: 1_000, updatedAt: 1_000,
+                    deleted: false)
+                try await app.testing().test(.PUT, "projects", beforeRequest: { req in
+                    req.headers.bearerAuthorization = .init(token: token)
+                    try req.content.encode([dto])
+                }, afterResponse: { res in
+                    #expect(res.status == .ok)
+                    let result = try res.content.decode(SyncResult.self)
+                    #expect(result.applied == 1)
+                })
+            }
+
+            // Each account sees only its own "default".
+            try await app.testing().test(.GET, "projects", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: tokenB)
+            }, afterResponse: { res in
+                let projects = try res.content.decode([ProjectDTO].self)
+                #expect(projects.count == 1)
+                #expect(projects.first?.name == "B's Wikidata")
+            })
+        }
+    }
+
     @Test("saved queries are isolated per user; anonymous is rejected")
     func queriesIsolation() async throws {
         try await withApp { app in

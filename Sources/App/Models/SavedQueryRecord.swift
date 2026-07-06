@@ -1,14 +1,21 @@
 import Fluent
 import Vapor
 
-/// Mirror of a saved query. `projectId` is a plain string (not a FK): client
-/// ids like "starter-<uuid>-3" are opaque here, and a query may arrive before
-/// its project in a batched sync.
+/// Mirror of a saved query.
+///
+/// Same identity rules as ``Project``: surrogate UUID row key, client id
+/// unique per user (migrated clients all carry `starter-0`-style ids).
+/// `projectId` is a plain string (not a FK): client ids are opaque here, and a
+/// query may arrive before its project in a batched sync.
 final class SavedQueryRecord: Model, @unchecked Sendable {
     static let schema = "saved_queries"
 
-    @ID(custom: .id, generatedBy: .user)
-    var id: String?
+    @ID(key: .id)
+    var id: UUID?
+
+    /// Client-generated identifier; unique per user.
+    @Field(key: "client_id")
+    var clientId: String
 
     @Parent(key: "user_id")
     var user: User

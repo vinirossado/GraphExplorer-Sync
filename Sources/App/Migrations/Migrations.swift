@@ -35,7 +35,8 @@ struct CreateUserToken: AsyncMigration {
 struct CreateProject: AsyncMigration {
     func prepare(on database: any Database) async throws {
         try await database.schema(Project.schema)
-            .field("id", .string, .identifier(auto: false))
+            .id()
+            .field("client_id", .string, .required)
             .field("user_id", .uuid, .required, .references(User.schema, "id", onDelete: .cascade))
             .field("name", .string, .required)
             .field("endpoint", .string, .required)
@@ -43,6 +44,9 @@ struct CreateProject: AsyncMigration {
             .field("last_opened_at_ms", .int64, .required)
             .field("updated_at_ms", .int64, .required)
             .field("deleted", .bool, .required)
+            // Client ids collide ACROSS users by design ("default", "starter-…"),
+            // so uniqueness is per user, never global.
+            .unique(on: "user_id", "client_id")
             .create()
     }
 
@@ -54,7 +58,8 @@ struct CreateProject: AsyncMigration {
 struct CreateSavedQueryRecord: AsyncMigration {
     func prepare(on database: any Database) async throws {
         try await database.schema(SavedQueryRecord.schema)
-            .field("id", .string, .identifier(auto: false))
+            .id()
+            .field("client_id", .string, .required)
             .field("user_id", .uuid, .required, .references(User.schema, "id", onDelete: .cascade))
             .field("project_id", .string, .required)
             .field("name", .string, .required)
@@ -62,6 +67,7 @@ struct CreateSavedQueryRecord: AsyncMigration {
             .field("folder", .string)
             .field("updated_at_ms", .int64, .required)
             .field("deleted", .bool, .required)
+            .unique(on: "user_id", "client_id")
             .create()
     }
 

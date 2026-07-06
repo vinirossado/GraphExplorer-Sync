@@ -1,0 +1,9 @@
+.build/
+.git/
+.github/
+.swiftpm/
+infrastructure/
+docs/
+*.md
+.env*
+.DS_Store

@@ -225,4 +225,38 @@ struct AppTests {
             }
         }
     }
+
+    @Test("share page renders HTML for browsers and escapes user content")
+    func shareHtmlView() async throws {
+        try await withApp { app in
+            let token = try await registerAndToken(app)
+            var slug = ""
+            try await app.testing().test(.POST, "shares", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: token)
+                try req.content.encode(CreateShareRequest(
+                    title: "<script>alert(1)</script>",
+                    query: "SELECT ?s WHERE { ?s ?p \"<b>\" }",
+                    endpoint: "http://localhost:3030/mtg/sparql"))
+            }, afterResponse: { res in
+                slug = try res.content.decode(ShareDTO.self).slug
+            })
+
+            try await app.testing().test(.GET, "shares/\(slug)", beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .accept, value: "text/html")
+            }, afterResponse: { res in
+                #expect(res.status == .ok)
+                #expect(res.headers.contentType == .html)
+                let body = res.body.string
+                #expect(body.contains("Graph Explorer"))
+                #expect(!body.contains("<script>alert(1)</script>")) // escaped
+                #expect(body.contains("&lt;script&gt;"))
+            })
+
+            // API clients still get JSON by default.
+            try await app.testing().test(.GET, "shares/\(slug)") { res in
+                let dto = try res.content.decode(ShareDTO.self)
+                #expect(dto.slug == slug)
+            }
+        }
+    }
 }

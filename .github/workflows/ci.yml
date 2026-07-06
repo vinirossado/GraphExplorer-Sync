@@ -43,25 +43,29 @@ jobs:
           docker push $IMAGE:latest
 
   deploy:
-    name: Deploy Bicep to Azure (TravelAPI resource group)
+    name: Deploy to Azure (ACR build + webapp restart)
     runs-on: ubuntu-latest
-    needs: publish
+    needs: test
     # Flip the repository variable AZURE_DEPLOY_ENABLED to 'true' once the
-    # AZURE_CREDENTIALS / AZURE_RESOURCE_GROUP secrets exist.
+    # AZURE_CREDENTIALS / AZURE_RESOURCE_GROUP / ACR_NAME / WEBAPP_NAME
+    # secrets exist. Infra names live in secrets — this repo is public.
     if: github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Deploy infrastructure + new image
-        # Infra names live in repository secrets — this repo is public and
-        # resource names stay out of it (see infrastructure/main.bicep).
+      - name: Build image in ACR (cloud builders, amd64)
         run: |
-          az deployment group create \
+          az acr build \
+            --registry ${{ secrets.ACR_NAME }} \
+            --image graphexplorer-sync:${{ github.sha }} \
+            --image graphexplorer-sync:latest \
+            --platform linux/amd64 .
+      - name: Restart Web App to pick up :latest
+        run: |
+          az webapp restart \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --template-file infrastructure/main.bicep \
-            --parameters dockerImage=$IMAGE:${{ github.sha }} \
-              appServicePlanName=${{ secrets.AZURE_APP_SERVICE_PLAN }} \
-              keyVaultName=${{ secrets.AZURE_KEY_VAULT }} \
-              postgresAdminLogin=${{ secrets.PG_ADMIN_LOGIN }}
+            --name ${{ secrets.WEBAPP_NAME }}
+      # Infrastructure changes stay manual:
+      #   az deployment group create -g <rg> -f infrastructure/main.bicep -p …

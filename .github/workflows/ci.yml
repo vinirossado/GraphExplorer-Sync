@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Build & test (Linux, Swift 6.3)
+    runs-on: ubuntu-latest
+    container: swift:6.3-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        # Tests run against an in-memory SQLite database (see configure.swift),
+        # so no service containers are needed.
+        run: swift test
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t graphexplorer-sync:${{ github.sha }} .
+
+      # ── Azure deploy (enable when infrastructure exists) ────────────────────
+      # 1. Create once:  az group create / az acr create /
+      #    az containerapp env create / az postgres flexible-server create
+      # 2. Add secrets:  AZURE_CREDENTIALS, ACR_NAME, CONTAINERAPP, RESOURCE_GROUP
+      # 3. Uncomment:
+      # - uses: azure/login@v2
+      #   with: { creds: "${{ secrets.AZURE_CREDENTIALS }}" }
+      # - run: az acr login --name ${{ secrets.ACR_NAME }}
+      # - run: |
+      #     docker tag graphexplorer-sync:${{ github.sha }} \
+      #       ${{ secrets.ACR_NAME }}.azurecr.io/graphexplorer-sync:${{ github.sha }}
+      #     docker push ${{ secrets.ACR_NAME }}.azurecr.io/graphexplorer-sync:${{ github.sha }}
+      # - run: |
+      #     az containerapp update \
+      #       --name ${{ secrets.CONTAINERAPP }} \
+      #       --resource-group ${{ secrets.RESOURCE_GROUP }} \
+      #       --image ${{ secrets.ACR_NAME }}.azurecr.io/graphexplorer-sync:${{ github.sha }}

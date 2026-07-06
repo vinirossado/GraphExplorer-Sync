@@ -12,6 +12,8 @@ let package = Package(
         .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.12.0"),
         // SQLite runs the in-memory database used by the test suite.
         .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.9.0"),
+        // `swift package generate-documentation` → Apple-style DocC site.
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
     targets: [
         .executableTarget(

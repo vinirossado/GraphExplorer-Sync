@@ -11,12 +11,27 @@ struct SharesController: RouteCollection {
         routes.get("shares", ":slug", use: read)
     }
 
+    /// Maximum SPARQL text length accepted in a share.
+    static let maxQueryLength = 20_000
+
+    /// Publishes a query as a public link.
+    ///
+    /// - Returns: ``ShareDTO`` including the generated 8-character slug.
+    /// - Throws: `400` for an empty query, `413` when query/title exceed the
+    ///   size caps.
     @Sendable
     func create(req: Request) async throws -> ShareDTO {
         let userID = try req.auth.require(User.self).requireID()
         let body = try req.content.decode(CreateShareRequest.self)
         guard !body.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Abort(.badRequest, reason: "Share query must not be empty.")
+        }
+        guard body.query.count <= Self.maxQueryLength else {
+            throw Abort(.payloadTooLarge,
+                        reason: "Query exceeds \(Self.maxQueryLength) characters.")
+        }
+        guard (body.title ?? "").count <= 200 else {
+            throw Abort(.payloadTooLarge, reason: "Title exceeds 200 characters.")
         }
 
         // Slug collisions are astronomically unlikely at 62^8, but retry anyway.

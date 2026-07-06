@@ -3,7 +3,26 @@ import FluentPostgresDriver
 import FluentSQLiteDriver
 import Vapor
 
+/// Boots the application: middleware, database selection, migrations, routes.
+///
+/// Environment knobs (all optional):
+/// - `DATABASE_URL` — full connection string (Azure style); wins over the
+///   discrete `DATABASE_HOST`/`PORT`/`USERNAME`/`PASSWORD`/`NAME` variables.
+/// - `GLOBAL_RATE_LIMIT` — requests / minute / IP across the whole API
+///   (default 120).
+/// - `AUTH_RATE_LIMIT` — requests / minute / IP for `POST /auth/*`
+///   (default 10) to blunt credential stuffing.
 public func configure(_ app: Application) async throws {
+    // Sync payloads are small metadata; anything bigger than this is abuse.
+    app.routes.defaultMaxBodySize = "256kb"
+
+    // Global per-IP budget. Sensitive routes add a stricter one on top
+    // (see routes.swift).
+    let globalLimit = Environment.get("GLOBAL_RATE_LIMIT").flatMap(Int.init) ?? 120
+    app.middleware.use(RateLimitMiddleware(
+        limiter: RateLimiter(maxRequests: globalLimit, windowSeconds: 60)
+    ))
+
     // The desktop clients call from file:// / app origins; shares may be read
     // from browsers later. Permissive CORS is fine for an API that only ever
     // returns the caller's own data (bearer-token scoped) or public shares.

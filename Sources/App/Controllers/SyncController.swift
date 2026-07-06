@@ -13,6 +13,9 @@ import Vapor
 /// - `GET ...?since=<ms>` returns records changed after that mark, tombstones
 ///   included, for incremental pulls.
 struct SyncController: RouteCollection {
+    /// Upper bound per batched `PUT` — larger syncs must page.
+    static let maxBatchSize = 500
+
     func boot(routes: any RoutesBuilder) throws {
         let protected = routes
             .grouped(UserToken.authenticator(), User.guardMiddleware())
@@ -45,10 +48,19 @@ struct SyncController: RouteCollection {
         }
     }
 
+    /// Batched last-write-wins upsert of projects.
+    ///
+    /// - Returns: ``SyncResult`` — how many records were applied vs skipped
+    ///   because the stored copy was newer.
+    /// - Throws: `413` when the batch exceeds ``maxBatchSize``.
     @Sendable
     func upsertProjects(req: Request) async throws -> SyncResult {
         let userID = try req.auth.require(User.self).requireID()
         let incoming = try req.content.decode([ProjectDTO].self)
+        guard incoming.count <= Self.maxBatchSize else {
+            throw Abort(.payloadTooLarge,
+                        reason: "At most \(Self.maxBatchSize) records per request.")
+        }
         var applied = 0
         var skipped = 0
         for dto in incoming {
@@ -112,10 +124,18 @@ struct SyncController: RouteCollection {
         }
     }
 
+    /// Batched last-write-wins upsert of saved queries.
+    ///
+    /// - Returns: ``SyncResult`` — applied vs skipped-as-stale counts.
+    /// - Throws: `413` when the batch exceeds ``maxBatchSize``.
     @Sendable
     func upsertQueries(req: Request) async throws -> SyncResult {
         let userID = try req.auth.require(User.self).requireID()
         let incoming = try req.content.decode([SavedQueryDTO].self)
+        guard incoming.count <= Self.maxBatchSize else {
+            throw Abort(.payloadTooLarge,
+                        reason: "At most \(Self.maxBatchSize) records per request.")
+        }
         var applied = 0
         var skipped = 0
         for dto in incoming {

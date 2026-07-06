@@ -20,7 +20,7 @@ struct AuthController: RouteCollection {
         auth.post("login", use: login)
 
         let protected = routes
-            .grouped(UserToken.authenticator(), User.guardMiddleware())
+            .grouped(TokenAuthenticator(), User.guardMiddleware())
         protected.get("me", use: me)
         protected.delete("auth", "logout", use: logout)
     }
@@ -94,16 +94,18 @@ struct AuthController: RouteCollection {
             throw Abort(.badRequest, reason: "Missing bearer token.")
         }
         try await UserToken.query(on: req.db)
-            .filter(\.$value == bearer.token)
+            .filter(\.$value == UserToken.digest(of: bearer.token))
             .delete()
         return .noContent
     }
 
     private func issueToken(for user: User, on req: Request) async throws -> TokenResponse {
-        let token = try UserToken.generate(for: user)
+        // The plaintext goes to the client exactly once; only its SHA-256
+        // digest is persisted (see ``UserToken``).
+        let (plaintext, token) = try UserToken.generate(for: user)
         try await token.save(on: req.db)
         return TokenResponse(
-            token: token.value,
+            token: plaintext,
             userId: try user.requireID().uuidString,
             email: user.email
         )

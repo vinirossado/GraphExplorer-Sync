@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/graphexplorer-sync
 
 jobs:
   test:
@@ -17,30 +21,42 @@ jobs:
         # so no service containers are needed.
         run: swift test
 
-  docker:
-    name: Docker image builds
+  publish:
+    name: Publish image to GHCR
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t graphexplorer-sync:${{ github.sha }} .
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push
+        run: |
+          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
 
-      # ── Azure deploy (enable when infrastructure exists) ────────────────────
-      # 1. Create once:  az group create / az acr create /
-      #    az containerapp env create / az postgres flexible-server create
-      # 2. Add secrets:  AZURE_CREDENTIALS, ACR_NAME, CONTAINERAPP, RESOURCE_GROUP
-      # 3. Uncomment:
-      # - uses: azure/login@v2
-      #   with: { creds: "${{ secrets.AZURE_CREDENTIALS }}" }
-      # - run: az acr login --name ${{ secrets.ACR_NAME }}
-      # - run: |
-      #     docker tag graphexplorer-sync:${{ github.sha }} \
-      #       ${{ secrets.ACR_NAME }}.azurecr.io/graphexplorer-sync:${{ github.sha }}
-      #     docker push ${{ secrets.ACR_NAME }}.azurecr.io/graphexplorer-sync:${{ github.sha }}
-      # - run: |
-      #     az containerapp update \
-      #       --name ${{ secrets.CONTAINERAPP }} \
-      #       --resource-group ${{ secrets.RESOURCE_GROUP }} \
-      #       --image ${{ secrets.ACR_NAME }}.azurecr.io/graphexplorer-sync:${{ github.sha }}
+  deploy:
+    name: Deploy Bicep to Azure (TravelAPI resource group)
+    runs-on: ubuntu-latest
+    needs: publish
+    # Flip the repository variable AZURE_DEPLOY_ENABLED to 'true' once the
+    # AZURE_CREDENTIALS / AZURE_RESOURCE_GROUP secrets exist.
+    if: github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy infrastructure + new image
+        run: |
+          az deployment group create \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file infrastructure/main.bicep \
+            --parameters dockerImage=$IMAGE:${{ github.sha }}

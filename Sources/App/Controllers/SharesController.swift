@@ -5,7 +5,7 @@ import Vapor
 struct SharesController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let protected = routes
-            .grouped(UserToken.authenticator(), User.guardMiddleware())
+            .grouped(TokenAuthenticator(), User.guardMiddleware())
         protected.post("shares", use: create)
 
         routes.get("shares", ":slug", use: read)

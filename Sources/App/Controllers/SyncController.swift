@@ -18,7 +18,7 @@ struct SyncController: RouteCollection {
 
     func boot(routes: any RoutesBuilder) throws {
         let protected = routes
-            .grouped(UserToken.authenticator(), User.guardMiddleware())
+            .grouped(TokenAuthenticator(), User.guardMiddleware())
         protected.get("projects", use: listProjects)
         protected.put("projects", use: upsertProjects)
         protected.get("queries", use: listQueries)

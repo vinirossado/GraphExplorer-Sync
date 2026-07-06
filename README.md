@@ -59,24 +59,42 @@ Tests (in-memory SQLite, no services needed):
 swift test
 ```
 
-## Deploy to Azure (once)
+## Deploy to Azure (Bicep — piggybacks on TravelAPI's infrastructure)
+
+`infrastructure/main.bicep` deploys into the **existing** TravelAPI resource
+group: a new container Web App on the same App Service Plan, a new
+`graphexplorer` database on the same PostgreSQL flexible server, and the
+connection string as a Key Vault secret resolved through the site's managed
+identity. Incremental cost ≈ zero; TLS comes from App Service (`httpsOnly`).
 
 ```bash
-az group create -n graphexplorer -l westeurope
-az acr create -n <acrname> -g graphexplorer --sku Basic
-az postgres flexible-server create -g graphexplorer -n <dbname> \
-  --sku-name Standard_B1ms --tier Burstable --version 17
-az containerapp env create -n graphexplorer-env -g graphexplorer
-az containerapp create -n graphexplorer-sync -g graphexplorer \
-  --environment graphexplorer-env \
-  --image <acrname>.azurecr.io/graphexplorer-sync:latest \
-  --target-port 8080 --ingress external \
-  --min-replicas 0 --max-replicas 2 \
-  --secrets database-url="postgres://…sslmode=require" \
-  --env-vars DATABASE_URL=secretref:database-url
+# First deployment (writes the connection-string secret):
+az deployment group create \
+  --resource-group <travelapi-rg> \
+  --template-file infrastructure/main.bicep \
+  --parameters pgSqlPassword=<pg-admin-password>
+
+# Redeploys (secret preserved):
+az deployment group create \
+  --resource-group <travelapi-rg> \
+  --template-file infrastructure/main.bicep \
+  --parameters dockerImage=ghcr.io/vinirossado/graphexplorer-sync:<sha>
 ```
 
-Then enable the deploy steps in `.github/workflows/ci.yml`.
+CI publishes the image to GHCR on every `main` push; set the repo variable
+`AZURE_DEPLOY_ENABLED=true` plus the `AZURE_CREDENTIALS` /
+`AZURE_RESOURCE_GROUP` secrets to enable continuous deploys.
+
+## Security model
+
+- **Passwords**: Bcrypt (salted, adaptive) — never stored or logged raw.
+- **Tokens**: 256-bit CSPRNG values; the database stores only their SHA-256
+  digest, so a leaked database yields no usable sessions.
+- **Transport**: HTTPS enforced by App Service; Postgres over TLS
+  (`sslmode=require`).
+- **Endpoint credentials never reach the server**: the desktop client strips
+  `user:pass@` from endpoint URLs before syncing.
+- Per-IP rate limits (global + strict on `/auth`), body/batch/length caps.
 
 ## Roadmap
 

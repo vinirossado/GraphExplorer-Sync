@@ -87,6 +87,38 @@ struct ProtectionTests {
         }
     }
 
+    @Test("bearer tokens are stored only as SHA-256 digests")
+    func tokenAtRestHashing() async throws {
+        try await withApp { app in
+            var plaintext = ""
+            try await app.testing().test(.POST, "auth/register", beforeRequest: { req in
+                try req.content.encode(
+                    Credentials(email: "hash@example.com", password: "password123"))
+            }, afterResponse: { res in
+                plaintext = try res.content.decode(TokenResponse.self).token
+            })
+
+            let stored = try await UserToken.query(on: app.db).all()
+            #expect(stored.count == 1)
+            #expect(stored.first?.value != plaintext) // never the raw token
+            #expect(stored.first?.value == UserToken.digest(of: plaintext))
+
+            // The plaintext still authenticates (digest lookup).
+            try await app.testing().test(.GET, "me", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: plaintext)
+            }, afterResponse: { res in
+                #expect(res.status == .ok)
+            })
+
+            // …and a tampered token does not.
+            try await app.testing().test(.GET, "me", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: "\(plaintext)x")
+            }, afterResponse: { res in
+                #expect(res.status == .unauthorized)
+            })
+        }
+    }
+
     @Test("passwords beyond bcrypt's 72-byte limit are rejected")
     func passwordCap() async throws {
         try await withApp { app in

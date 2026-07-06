@@ -55,8 +55,13 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       - name: Deploy infrastructure + new image
+        # Infra names live in repository secrets — this repo is public and
+        # resource names stay out of it (see infrastructure/main.bicep).
         run: |
           az deployment group create \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --template-file infrastructure/main.bicep \
-            --parameters dockerImage=$IMAGE:${{ github.sha }}
+            --parameters dockerImage=$IMAGE:${{ github.sha }} \
+              appServicePlanName=${{ secrets.AZURE_APP_SERVICE_PLAN }} \
+              keyVaultName=${{ secrets.AZURE_KEY_VAULT }} \
+              postgresAdminLogin=${{ secrets.PG_ADMIN_LOGIN }}

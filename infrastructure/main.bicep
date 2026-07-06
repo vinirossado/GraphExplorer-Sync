@@ -12,16 +12,20 @@
 param location string = resourceGroup().location
 var uniqueId = uniqueString(resourceGroup().id)
 
-@description('Existing App Service Plan created by TravelAPI')
-param appServicePlanName string = 'plan-api-2g45mzh7gjumo'
+// Names of the pre-existing resources are deliberately NOT defaulted here —
+// this repo is public, and infrastructure names don't belong in it. Pass them
+// per deployment (CLI parameters locally, repository secrets in CI).
+@description('Name of the existing App Service Plan to deploy onto')
+param appServicePlanName string
 
-@description('Existing Key Vault created by TravelAPI')
-param keyVaultName string = 'kv-2g45mzh7gjumo'
+@description('Name of the existing Key Vault holding the connection secret')
+param keyVaultName string
 
-@description('Existing PostgreSQL flexible server (TravelAPI naming convention)')
+@description('Existing PostgreSQL flexible server (defaults to the sibling-deployment naming convention)')
 param postgresServerName string = 'postgresql-${uniqueString(resourceGroup().id)}'
 
-param postgresAdminLogin string = 'adminuser'
+@description('PostgreSQL admin login')
+param postgresAdminLogin string
 
 @secure()
 @description('PostgreSQL admin password. Required on first deployment to write the connection-string secret; leave empty on redeployments to preserve the existing Key Vault secret.')
@@ -67,7 +71,9 @@ module connectionSecret 'modules/secrets/keyvault-secret.bicep' = if (!empty(pgS
     keyVaultName: keyVaultName
     secretName: connectionSecretName
     // postgres:// URL — exactly the DATABASE_URL format the Vapor app consumes.
-    secretValue: 'postgres://${postgresAdminLogin}:${pgSqlPassword}@${postgres.name}.postgres.database.azure.com:5432/graphexplorer?sslmode=require'
+    // uriComponent(): passwords with URL-reserved characters (@, :, /, #…)
+    // must be percent-encoded or the URL parser mis-splits the authority.
+    secretValue: 'postgres://${postgresAdminLogin}:${uriComponent(pgSqlPassword)}@${postgres.name}.postgres.database.azure.com:5432/graphexplorer?sslmode=require'
   }
 }
 
